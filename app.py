@@ -110,6 +110,28 @@ PROFILES = {
             "price_multiplier": 2.0
         }
     },
+    "UGG Ballistic": {
+        "columns": {
+            "art_num": "SupplierItemCode+SupplierColorCode",
+            "code": "SupplierItemCode",
+            "size": "Size Converted",
+            "description": "ItemDescription",
+            "season": "Season",
+            "barcode": "Item Barcode",
+            "qta": "Quantity",
+            "price_eur": "DocumentPrice",
+            "division": "FamilyDescription",
+            "gender": "Sex Description",
+            "age": "Age Description",
+            "silhouette": "CategoryDescription",
+            "cod_color": "SupplierColorCode",
+            "rrp": "Suggested Retail Price",
+        },
+        "defaults": {
+            "brand": "UGG",
+            "price_multiplier": 2.0
+        }
+    },
     "General Ballistic": {
         "columns": {
             "art_num": "Model",
@@ -345,6 +367,12 @@ TIPO_MAP = {
     'MID SHORT W KNEE TGT': 'Къс панталон',
     'UPPER SHORT W MID TGH TGT': 'Къс панталон',
     'G NP DF TANK': 'Потник',
+    # UGG
+    'BOOTS&BOOTIES': 'Боти',
+    'SLIPPERS': 'Пантофи',
+    'SNEAKER': 'Маратонки',
+    'CLOGS': 'Сабо',
+    'MULE': 'Чехли',
 }
 
 # Punti di prezzo commerciali
@@ -359,7 +387,7 @@ PRICE_POINTS = [
 # Regole grammaticali per la lingua bulgara
 FEMININE_WORDS = {'тениска', 'риза', 'чанта', 'раница', 'жилетка', 'шапка'}
 NEUTER_WORDS = {'яке', 'бюстие', 'боди'}
-PLURAL_WORDS = {'маратонки', 'кецове', 'чорапи', 'боксерки', 'сандали', 'предпазни кори'}
+PLURAL_WORDS = {'маратонки', 'кецове', 'чорапи', 'боксерки', 'сандали', 'предпазни кори', 'боти', 'пантофи', 'чехли', 'сабо'}
 
 # Prefissi di genere per il bulgaro
 GENDER_PREFIXES = {
@@ -667,6 +695,7 @@ def process_file(df, col_map, price_multiplier=1.8, tipo_map=None, brand="NIKE",
     c_color = col_map.get('color', '')
     c_cod_nike = col_map.get('cod_nike', '')
     c_rrp = col_map.get('rrp', '')
+    c_age = col_map.get('age', '')
 
     # Proверка за наличие на колони (включително мулти-колони)
     all_specified_cols = []
@@ -686,6 +715,8 @@ def process_file(df, col_map, price_multiplier=1.8, tipo_map=None, brand="NIKE",
         check_list.append(c_cod_nike)
     if c_rrp:
         check_list.append(c_rrp)
+    if c_age:
+        check_list.append(c_age)
 
     for spec in check_list:
         if spec:
@@ -718,6 +749,10 @@ def process_file(df, col_map, price_multiplier=1.8, tipo_map=None, brand="NIKE",
         # Cod Color = colonna Цвят letta direttamente
         cod_color_src = c_cod_color if c_cod_color else c_art
         result['Cod Color'] = converti_in_stringhe(get_multi_col_data(df, cod_color_src))
+    elif profile_name == "UGG Ballistic":
+        # Cod+Color = SupplierItemCode + '-' + SupplierColorCode (es. "1016222-BLK")
+        result['Cod+Color'] = get_multi_col_data(df, c_art, sep="-").astype(str)
+        result['Cod Color'] = converti_in_stringhe(get_multi_col_data(df, c_cod_color))
     elif profile_name == "SPRAYGROUND Ballistic":
         # Cod+Color = colonna "Code+Color" letta direttamente (il + è parte del nome colonna)
         if 'Code+Color' in df.columns:
@@ -743,10 +778,13 @@ def process_file(df, col_map, price_multiplier=1.8, tipo_map=None, brand="NIKE",
     taglia_raw = get_multi_col_data(df, c_size)
     if profile_name == "ASICS Ballistic":
         result['TAGLIA'] = converti_in_stringhe(taglia_raw).apply(convert_us_to_eur_size)
+    elif profile_name == "UGG Ballistic":
+        # Size Converted è già in EUR; Excel lo legge come float (41.0 → "41", 32.5 → "32.5")
+        result['TAGLIA'] = converti_in_stringhe(taglia_raw).str.replace(r'\.0$', '', regex=True)
     else:
         result['TAGLIA'] = taglia_raw
 
-    if profile_name in ["New Balance Ballistic", "On Ballistic", "ASICS Ballistic", "SPRAYGROUND Ballistic"]:
+    if profile_name in ["New Balance Ballistic", "On Ballistic", "ASICS Ballistic", "SPRAYGROUND Ballistic", "UGG Ballistic"]:
         result['SKU Completo'] = converti_in_stringhe(result['Cod+Color']) + '-' + converti_in_stringhe(result['TAGLIA'])
     else:
         # За Nike използваме оригиналния арт. номер без промяна на сепаратора за SKU
@@ -788,7 +826,7 @@ def process_file(df, col_map, price_multiplier=1.8, tipo_map=None, brand="NIKE",
                 errors='coerce'
             ).fillna(0.0)
         result['PREZZO NEGOZIO'] = sell_out_raw.round(2)
-    elif profile_name == "ASICS Ballistic" and c_rrp and c_rrp in df.columns:
+    elif profile_name in ["ASICS Ballistic", "UGG Ballistic"] and c_rrp and c_rrp in df.columns:
         rrp_raw = df[c_rrp]
         if rrp_raw.dtype == object:
             rrp_raw = pd.to_numeric(
@@ -805,6 +843,15 @@ def process_file(df, col_map, price_multiplier=1.8, tipo_map=None, brand="NIKE",
     # 14-16: Оригинални колони преименувани
     result['CATEGORIA'] = get_multi_col_data(df, c_div)
     result['GENERE'] = get_multi_col_data(df, c_gen)
+    is_kid = pd.Series(False, index=df.index)
+    if profile_name == "UGG Ballistic" and c_age:
+        # Per i bambini (Age ≠ Adult) GENERE = Age + Sex (es. "KIDS UNISEX", "PRESCHOOL UNISEX")
+        age_data = converti_in_stringhe(get_multi_col_data(df, c_age)).str.strip()
+        is_kid = age_data.ne('') & age_data.str.upper().ne('ADULT')
+        result.loc[is_kid, 'GENERE'] = (
+            age_data[is_kid].str.upper() + ' ' +
+            converti_in_stringhe(result.loc[is_kid, 'GENERE']).str.strip().str.upper()
+        )
     result['TIPO'] = get_multi_col_data(df, c_tipo)
 
     # 17: CATEG.BG
@@ -823,6 +870,10 @@ def process_file(df, col_map, price_multiplier=1.8, tipo_map=None, brand="NIKE",
         on_map = GENDER_MAP.copy()
         on_map.update({'w': 'Жени', 'W': 'Жени', 'm': 'Мъже', 'M': 'Мъже'})
         result['GEN.BG'] = gen_data.map(on_map)
+    elif profile_name == "UGG Ballistic":
+        # Bambini (Kids, Preschool, Toddler, ...) → 'Деца', adulti → mappa standard
+        result['GEN.BG'] = gen_data.map(GENDER_MAP)
+        result.loc[is_kid, 'GEN.BG'] = 'Деца'
     else:
         result['GEN.BG'] = gen_data.map(GENDER_MAP)
 
@@ -951,7 +1002,9 @@ with st.sidebar:
             "gender": "→ GENERE (Пол)",
             "silhouette": "→ TIPO (Силует)",
             "cod_color": "→ Cod Color - Color Code (Код цвят)",
-            "cod_nike": "→ Cod.Nike (Специфичен код)"
+            "cod_nike": "→ Cod.Nike (Специфичен код)",
+            "age": "→ Възраст (Adult / Kids) за GENERE",
+            "rrp": "→ PREZZO NEGOZIO (Препоръчителна цена)",
         }
 
         for key, val in current_mappings.items():

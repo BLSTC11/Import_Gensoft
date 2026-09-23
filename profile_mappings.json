@@ -88,5 +88,22 @@
         "cod_color": "Цвят",
         "rrp": "RRP",
         "__price_multiplier__": 2.0
+    },
+    "UGG Ballistic": {
+        "art_num": "SupplierItemCode+SupplierColorCode",
+        "code": "SupplierItemCode",
+        "size": "Size Converted",
+        "description": "ItemDescription",
+        "season": "Season",
+        "barcode": "Item Barcode",
+        "qta": "Quantity",
+        "price_eur": "DocumentPrice",
+        "division": "FamilyDescription",
+        "gender": "Sex Description",
+        "age": "Age Description",
+        "silhouette": "CategoryDescription",
+        "cod_color": "SupplierColorCode",
+        "rrp": "Suggested Retail Price",
+        "__price_multiplier__": 2.0
     }
 }
