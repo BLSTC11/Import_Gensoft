@@ -3,6 +3,9 @@ import pandas as pd
 import io
 import json
 import os
+import base64
+import urllib.request
+import urllib.error
 from datetime import datetime
 
 # ============================================================
@@ -153,10 +156,56 @@ PROFILES = {
     }
 }
 
-CONFIG_FILE = "profile_mappings.json"
+# Percorso assoluto accanto ad app.py: funziona anche se Streamlit viene avviato da un'altra cartella
+CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "profile_mappings.json")
+
+
+def get_github_settings():
+    """Legge le impostazioni GitHub da st.secrets (sezione [github]).
+    Su Streamlit Cloud il filesystem è temporaneo: senza GitHub i mapping salvati
+    vanno persi a ogni riavvio/redeploy. Restituisce None se non configurato.
+    """
+    try:
+        gh = st.secrets["github"]
+        token = gh["token"]
+    except Exception:
+        return None
+    return {
+        "token": token,
+        "repo": gh.get("repo", "Tendenzabg/Import_Gensoft"),
+        "branch": gh.get("branch", "main"),
+        "path": gh.get("path", "profile_mappings.json"),
+    }
+
+
+def github_request(gh, method, data=None):
+    """Esegue una richiesta all'API GitHub Contents per il file dei mapping."""
+    url = f"https://api.github.com/repos/{gh['repo']}/contents/{gh['path']}"
+    if method == "GET":
+        url += f"?ref={gh['branch']}"
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(data).encode("utf-8") if data is not None else None,
+        method=method,
+        headers={
+            "Authorization": f"Bearer {gh['token']}",
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
 
 def load_persistent_configurations():
-    """Зарежда персонализирани мапинги от JSON файл."""
+    """Зарежда персонализирани мапинги (GitHub, ако е конфигуриран, иначе локален JSON файл)."""
+    gh = get_github_settings()
+    if gh:
+        try:
+            content = github_request(gh, "GET")["content"]
+            return json.loads(base64.b64decode(content).decode("utf-8"))
+        except Exception as e:
+            print(f"Errore nel caricamento dei mapping da GitHub: {e}")
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -165,13 +214,43 @@ def load_persistent_configurations():
             st.error(f"Грешка при зареждане на конфигурация: {e}")
     return {}
 
+
 def save_persistent_configurations(configs):
-    """Записва персонализирани мапинги в JSON файл."""
+    """Записва персонализирани мапинги в JSON файл (и в GitHub, ако е конфигуриран).
+    Връща True при успех.
+    """
+    text = json.dumps(configs, ensure_ascii=False, indent=4)
     try:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(configs, f, ensure_ascii=False, indent=4)
+            f.write(text)
     except Exception as e:
         st.error(f"Грешка при запис на конфигурация: {e}")
+        return False
+
+    gh = get_github_settings()
+    if gh:
+        try:
+            try:
+                current = github_request(gh, "GET")
+                if base64.b64decode(current["content"]).decode("utf-8") == text:
+                    return True
+                sha = current["sha"]
+            except urllib.error.HTTPError as e:
+                if e.code != 404:
+                    raise
+                sha = None
+            payload = {
+                "message": "Aggiornati mapping profili dall'app",
+                "content": base64.b64encode(text.encode("utf-8")).decode("ascii"),
+                "branch": gh["branch"],
+            }
+            if sha:
+                payload["sha"] = sha
+            github_request(gh, "PUT", payload)
+        except Exception as e:
+            st.error(f"Мапингът е записан локално, но не и в GitHub: {e}")
+            return False
+    return True
 
 # Инициализация на сесийното състояние с мапингите
 if 'profile_configs' not in st.session_state:
@@ -1014,15 +1093,19 @@ with st.sidebar:
             label = labels_dict.get(key, key)
             updated_mappings[key] = st.text_input(label, value=val, key=f"inp_{profile_name}_{key}")
         
+        # Se un campo è stato modificato, salviamo subito (non serve premere il pulsante)
+        mapping_changed = any(current_mappings.get(k) != v for k, v in updated_mappings.items())
         # Обновяваме сесийното състояние (само ключовете di mapping, senza __price_multiplier__)
         st.session_state['profile_configs'][profile_name].update(updated_mappings)
-        
+        if mapping_changed and save_persistent_configurations(st.session_state['profile_configs']):
+            st.success(f"Промяната в мапинга за **{profile_name}** е запазена автоматично.")
+
         if st.button("💾 Запази мапинга за този профил", use_container_width=True):
             # Salviamo anche il moltiplicatore corrente dalla session_state
             st.session_state['profile_configs'][profile_name]['__price_multiplier__'] = \
                 st.session_state.get(f'pm_{profile_name}', selected_profile['defaults']['price_multiplier'])
-            save_persistent_configurations(st.session_state['profile_configs'])
-            st.success(f"Конфигурацията за **{profile_name}** е запазена!")
+            if save_persistent_configurations(st.session_state['profile_configs']):
+                st.success(f"Конфигурацията за **{profile_name}** е запазена!")
     
     # Filtriamo le chiavi speciali (come __price_multiplier__) che non sono mapping di colonne
     col_map = {k: v for k, v in st.session_state['profile_configs'][profile_name].items()
@@ -1042,6 +1125,10 @@ with st.sidebar:
         help="Цената FPC се умножава по тази стойност",
         key=f'pm_{profile_name}'
     )
+    # Salvataggio automatico del moltiplicatore se è stato modificato
+    if price_multiplier != st.session_state['profile_configs'][profile_name].get('__price_multiplier__'):
+        st.session_state['profile_configs'][profile_name]['__price_multiplier__'] = price_multiplier
+        save_persistent_configurations(st.session_state['profile_configs'])
 
     brand_name = st.text_input(
         "Марка",
