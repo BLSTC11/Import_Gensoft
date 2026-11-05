@@ -632,6 +632,10 @@ def load_size_table(uploaded_file):
 
 def round_to_price_point(value):
     """Закръгля до най-близката търговска ценова точка. При равенство -> нагоре."""
+    # Sopra l'ultimo price point si prosegue con lo stesso schema della fascia 200-299
+    # (prezzi che finiscono in 9, ogni 10 euro), altrimenti tutto verrebbe appiattito a 299.
+    if value > PRICE_POINTS[-1]:
+        return int((value - 9) / 10 + 0.5) * 10 + 9
     best = None
     best_diff = float('inf')
     for pp in PRICE_POINTS:
