@@ -931,10 +931,13 @@ def process_file(df, col_map, price_multiplier=1.8, tipo_map=None, brand="NIKE",
         # Per i bambini (Age ≠ Adult) GENERE = Age + Sex (es. "KIDS UNISEX", "PRESCHOOL UNISEX")
         age_data = converti_in_stringhe(get_multi_col_data(df, c_age)).str.strip()
         is_kid = age_data.ne('') & age_data.str.upper().ne('ADULT')
+        # Se la colonna del sesso è vuota, pandas la legge come numerica (float64):
+        # con pandas 3 non si possono più scriverci testi, quindi la rendiamo testuale.
+        result['GENERE'] = result['GENERE'].astype(object)
         result.loc[is_kid, 'GENERE'] = (
             age_data[is_kid].str.upper() + ' ' +
             converti_in_stringhe(result.loc[is_kid, 'GENERE']).str.strip().str.upper()
-        )
+        ).str.strip()
     result['TIPO'] = get_multi_col_data(df, c_tipo)
 
     # 17: CATEG.BG
@@ -955,7 +958,7 @@ def process_file(df, col_map, price_multiplier=1.8, tipo_map=None, brand="NIKE",
         result['GEN.BG'] = gen_data.map(on_map)
     elif profile_name == "UGG Ballistic":
         # Bambini (Kids, Preschool, Toddler, ...) → 'Деца', adulti → mappa standard
-        result['GEN.BG'] = gen_data.map(GENDER_MAP)
+        result['GEN.BG'] = gen_data.map(GENDER_MAP).astype(object)
         result.loc[is_kid, 'GEN.BG'] = 'Деца'
     else:
         result['GEN.BG'] = gen_data.map(GENDER_MAP)
