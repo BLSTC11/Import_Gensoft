@@ -1365,6 +1365,7 @@ if uploaded_file is not None:
 
             with col_dl1:
                 st.download_button(
+                    on_click="ignore",
                     label="Изтегли обработен файл",
                     data=excel_bytes,
                     file_name=filename,
@@ -1419,6 +1420,7 @@ if uploaded_file is not None:
 
         with col_dl2:
             st.download_button(
+                on_click="ignore",
                 label="Изтегли Packing List",
                 data=packing_bytes,
                 file_name=packing_filename,
@@ -1467,6 +1469,7 @@ if uploaded_file is not None:
 
         with col_dl3:
             st.download_button(
+                on_click="ignore",
                 label="Изтегли Packing List Детайлен",
                 data=packing_dett_bytes,
                 file_name=packing_dett_filename,
@@ -1525,6 +1528,7 @@ if uploaded_file is not None:
 
         with col_dl4:
             st.download_button(
+                on_click="ignore",
                 label="Изтегли Import Gensoft",
                 data=gensoft_bytes,
                 file_name=gensoft_filename,
@@ -1542,6 +1546,7 @@ if uploaded_file is not None:
         col_nb1, col_nb2 = st.columns(2)
         with col_nb1:
             st.download_button(
+                on_click="ignore",
                 label="Импорт Генсофт Баркод",
                 data=barcode_txt.encode("utf-8"),
                 file_name=barcode_txt_filename,
